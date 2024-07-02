@@ -205,6 +205,9 @@ where
             evm.db_mut().commit(state);
 
             // append gas used
+            if block.number == 35547819 {
+                debug!("tx fee: {:?}", result.gas_used() as u128 * transaction.effective_gas_price(None));
+            }
             cumulative_gas_used += result.gas_used();
 
             // Push transaction changeset and calculate header bloom filter for receipt.
