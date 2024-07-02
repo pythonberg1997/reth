@@ -207,6 +207,7 @@ where
             // append gas used
             if block.number == 35547819 {
                 debug!("tx fee: {:?}", result.gas_used() as u128 * transaction.effective_gas_price(None));
+                debug!("result: {:?}", result);
             }
             cumulative_gas_used += result.gas_used();
 
