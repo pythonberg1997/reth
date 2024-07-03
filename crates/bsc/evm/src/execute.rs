@@ -202,10 +202,7 @@ where
                     error: err.into(),
                 }
             })?;
-            if block.number == 35547819 &&
-                transaction.hash() ==
-                    b256!("5ebef67c81a8b0121c081056f10c17a3943eb59f74f53e2c54dc939d0bb06f55")
-            {
+            if block.number == 35547819 {
                 debug!("tx state: {:?}", state);
             }
             evm.db_mut().commit(state);
