@@ -210,7 +210,7 @@ where
                 transaction.hash() ==
                     b256!("5ebef67c81a8b0121c081056f10c17a3943eb59f74f53e2c54dc939d0bb06f55")
             {
-                debug!("tx result: {:?}", result);
+                debug!("tx state: {:?}", state);
             }
             cumulative_gas_used += result.gas_used();
 
