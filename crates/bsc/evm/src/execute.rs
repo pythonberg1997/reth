@@ -202,16 +202,15 @@ where
                     error: err.into(),
                 }
             })?;
-
-            evm.db_mut().commit(state);
-
-            // append gas used
             if block.number == 35547819 &&
                 transaction.hash() ==
                     b256!("5ebef67c81a8b0121c081056f10c17a3943eb59f74f53e2c54dc939d0bb06f55")
             {
                 debug!("tx state: {:?}", state);
             }
+            evm.db_mut().commit(state);
+
+            // append gas used
             cumulative_gas_used += result.gas_used();
 
             // Push transaction changeset and calculate header bloom filter for receipt.
