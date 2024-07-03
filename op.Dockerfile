@@ -43,7 +43,7 @@ FROM ubuntu AS runtime
 WORKDIR /app
 
 # Copy reth over from the build stage
-COPY --from=builder /app/bsc-reth /usr/local/bin
+COPY --from=builder /app/op-reth /usr/local/bin
 
 # Copy licenses
 COPY LICENSE-* ./

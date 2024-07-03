@@ -17,6 +17,7 @@ use reth_evm::{
     ConfigureEvm,
 };
 use reth_primitives::{
+    b256,
     parlia::{ParliaConfig, Snapshot, VoteAddress, CHECKPOINT_INTERVAL},
     system_contracts::get_upgrade_system_contracts,
     Address, BlockNumber, BlockWithSenders, Bytes, Header, Receipt, Transaction, TransactionSigned,
@@ -201,7 +202,20 @@ where
                     error: err.into(),
                 }
             })?;
-
+            if block.number == 35547819 &&
+                transaction.recalculate_hash() ==
+                    b256!("5ebef67c81a8b0121c081056f10c17a3943eb59f74f53e2c54dc939d0bb06f55")
+            {
+                debug!("tx hash: {:?}", transaction.hash());
+                debug!("tx state: {:?}", state);
+            }
+            if block.number == 35547779 &&
+                transaction.recalculate_hash() ==
+                    b256!("7ce9a3cf77108fcc85c1e84e88e363e3335eca515dfcf2feb2011729878b13a7")
+            {
+                debug!("tx hash: {:?}", transaction.hash());
+                debug!("tx state: {:?}", state);
+            }
             evm.db_mut().commit(state);
 
             // append gas used
