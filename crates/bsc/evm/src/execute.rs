@@ -17,6 +17,7 @@ use reth_evm::{
     ConfigureEvm,
 };
 use reth_primitives::{
+    b256,
     parlia::{ParliaConfig, Snapshot, VoteAddress, CHECKPOINT_INTERVAL},
     system_contracts::get_upgrade_system_contracts,
     Address, BlockNumber, BlockWithSenders, Bytes, Header, Receipt, Transaction, TransactionSigned,
@@ -205,9 +206,11 @@ where
             evm.db_mut().commit(state);
 
             // append gas used
-            if block.number == 35547819 {
-                debug!("tx fee: {:?}", result.gas_used() as u128 * transaction.effective_gas_price(None));
-                debug!("result: {:?}", result);
+            if block.number == 35547819 &&
+                transaction.hash() ==
+                    b256!("5ebef67c81a8b0121c081056f10c17a3943eb59f74f53e2c54dc939d0bb06f55")
+            {
+                debug!("tx result: {:?}", result);
             }
             cumulative_gas_used += result.gas_used();
 
