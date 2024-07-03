@@ -167,10 +167,12 @@ The command below is for an archive node. To run a full node, simply add the `--
 # for testnet
 export network=testnet
 export L2_RPC=https://opbnb-testnet-rpc.bnbchain.org
+export TRUST_NODES="enode://1a8f2d3160ad6efd6591981c026bd31807b79844422d99107f8ffa0bd966f35dd6b44d3169e05fcb15be492a58c3098c1d5ab04a3b2769f1aa87ab871b3ef49b@54.238.146.8:30303,enode://28a8309f958c58a0f6fd3cee83951033d20f2b7369e25c63f66caf0d2bac1df89df52b82d74d828f35c76152e4b2aa8dae816a2e3ea5a03c40d4ec08005d426c@35.74.91.224:30303"
 
 # for mainnet
 # export network=mainnet
 # export L2_RPC=https://opbnb-mainnet-rpc.bnbchain.org
+# export TRUST_NODES="enode://db109c6cac5c8b6225edd3176fc3764c58e0720950fe94c122c80978e706a9c9e976629b718e48b6306ea0f9126e5394d3424c9716c5703549e2e7eba216353b@52.193.218.151:30303,enode://e74ecea4943c27d7d4d0c40f84fc3426a7e80f8a9035c0b383725b693ebf9a6376b8c9db12690b513a6ac83041d9b6418d51dc079dce1f13ef948b32f63a589d@54.150.37.120:30303"
 
 ./target/release/op-reth node \
     --datadir=./datadir \
@@ -188,6 +190,7 @@ export L2_RPC=https://opbnb-testnet-rpc.bnbchain.org
     --ws.port=8546 \
     --builder.gaslimit=150000000 \
     --nat=any \
+    --trusted-peers=${TRUST_NODES} \
     --log.file.directory ./datadir/logs
 ```
 
