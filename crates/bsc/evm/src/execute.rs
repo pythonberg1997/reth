@@ -189,33 +189,36 @@ where
                 .into());
             }
 
-            self.patch_mainnet(&block.header, transaction, evm.db_mut());
-            self.patch_chapel(&block.header, transaction, evm.db_mut());
+            self.patch_mainnet_before_tx(&block.header, transaction, evm.db_mut());
+            self.patch_chapel_before_tx(&block.header, transaction, evm.db_mut());
 
             EvmConfig::fill_tx_env(evm.tx_mut(), transaction, *sender);
 
             // Execute transaction.
-            let ResultAndState { result, state } = evm.transact().map_err(move |err| {
+            let ResultAndState { result, mut state } = evm.transact().map_err(move |err| {
                 // Ensure hash is calculated for error log, if not already done
                 BlockValidationError::EVM {
                     hash: transaction.recalculate_hash(),
                     error: err.into(),
                 }
             })?;
+
             if block.number == 35547819 &&
                 transaction.recalculate_hash() ==
                     b256!("5ebef67c81a8b0121c081056f10c17a3943eb59f74f53e2c54dc939d0bb06f55")
             {
-                debug!("tx hash: {:?}", transaction.hash());
-                debug!("tx state: {:?}", state);
+                debug!("35547819 tx state: {:?}", state);
             }
             if block.number == 35547779 &&
                 transaction.recalculate_hash() ==
                     b256!("7ce9a3cf77108fcc85c1e84e88e363e3335eca515dfcf2feb2011729878b13a7")
             {
-                debug!("tx hash: {:?}", transaction.hash());
-                debug!("tx state: {:?}", state);
+                debug!("35547779 tx state: {:?}", state);
             }
+
+            self.patch_mainnet_after_tx(&block.header, transaction, &mut state);
+            self.patch_chapel_after_tx(&block.header, transaction, &mut state);
+
             evm.db_mut().commit(state);
 
             // append gas used
