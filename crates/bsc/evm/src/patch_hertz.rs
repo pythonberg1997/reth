@@ -430,7 +430,7 @@ fn apply_patch<DB>(
     DB: Database<Error = ProviderError>,
 {
     for (block_hash, tx_hash, address, patch) in patches {
-        if header.hash_slow() == block_hash && transaction.hash() == tx_hash {
+        if header.hash_slow() == block_hash && transaction.recalculate_hash() == tx_hash {
             trace!("patch evm state at block {:?} tx {:?}", block_hash, tx_hash);
 
             let account = state.load_cache_account(address).unwrap().clone();
