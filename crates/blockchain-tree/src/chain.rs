@@ -242,7 +242,7 @@ impl AppendableChain {
                 .into())
             }
 
-            tracing::debug!(
+            tracing::info!(
                 target: "blockchain_tree::chain",
                 number = block.number,
                 hash = %block_hash,
