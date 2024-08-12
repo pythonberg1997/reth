@@ -60,7 +60,7 @@ install-op: ## Build and install the op-reth binary under `~/.cargo/bin`.
 .PHONY: install-bsc
 install-bsc: ## Build and install the bsc-reth binary under `~/.cargo/bin`.
 	cargo install --path bin/reth --bin bsc-reth --force --locked \
-		--features "bsc $(FEATURES)" \
+		--features "bsc prefetch $(FEATURES)" \
 		--profile "$(PROFILE)" \
 		$(CARGO_INSTALL_EXTRA_FLAGS)
 
@@ -74,7 +74,7 @@ build-op: ## Build the op-reth binary into `target` directory.
 
 .PHONY: build-bsc
 build-bsc: ## Build the bsc-reth binary into `target` directory.
-	cargo build --bin bsc-reth --features "bsc $(FEATURES)" --profile "$(PROFILE)"
+	cargo build --bin bsc-reth --features "bsc prefetch $(FEATURES)" --profile "$(PROFILE)"
 
 # Builds the reth binary natively.
 build-native-%:
@@ -84,7 +84,7 @@ op-build-native-%:
 	cargo build --bin op-reth --target $* --features "optimism,opbnb,$(FEATURES)" --profile "$(PROFILE)"
 
 bsc-build-native-%:
-	cargo build --bin bsc-reth --target $* --features "bsc,$(FEATURES)" --profile "$(PROFILE)"
+	cargo build --bin bsc-reth --target $* --features "bsc,prefetch,$(FEATURES)" --profile "$(PROFILE)"
 
 # The following commands use `cross` to build a cross-compile.
 #
@@ -127,7 +127,7 @@ op-build-%:
 
 bsc-build-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
-		cross build --bin bsc-reth --target $* --features "bsc,$(FEATURES)" --profile "$(PROFILE)"
+		cross build --bin bsc-reth --target $* --features "bsc,prefetch,$(FEATURES)" --profile "$(PROFILE)"
 
 # Unfortunately we can't easily use cross to build for Darwin because of licensing issues.
 # If we wanted to, we would need to build a custom Docker image with the SDK available.
