@@ -70,7 +70,7 @@ impl TriePrefetch {
                         let self_clone = Arc::new(self.clone());
                         let mut shutdown_rx = shutdown_rx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = self_clone.prefetch_once::<DB>(consistent_view, hashed_state, count, &mut shutdown_rx).await {
+                            if let Err(e) = self_clone.prefetch_once::<DB>(consistent_view, hashed_state, &mut shutdown_rx).await {
                                 debug!(target: "trie::trie_prefetch", ?e, "Error while prefetching trie storage");
                             };
                         });
@@ -139,13 +139,13 @@ impl TriePrefetch {
         self: Arc<Self>,
         consistent_view: Arc<ConsistentDbView<DB, ProviderFactory<DB>>>,
         hashed_state: HashedPostState,
-        count: u64,
+        // count: u64,
         shutdown_rx: &mut watch::Receiver<bool>,
     ) -> Result<(), TriePrefetchError>
     where
         DB: Database,
     {
-        debug!("prefetch once started {:?}", count);
+        // debug!("prefetch once started {:?}", count);
 
         let mut tracker = TrieTracker::default();
 
@@ -243,7 +243,7 @@ impl TriePrefetch {
             "prefetched account trie"
         );
 
-        debug!("prefetch once finished {:?}", count);
+        // debug!("prefetch once finished {:?}", count);
 
         Ok(())
     }
