@@ -125,9 +125,9 @@ impl<
             chain_tracker_rx: Arc::new(Mutex::new(chain_tracker_rx)),
         };
 
-        this.start_block_event_listening();
-        this.start_fork_choice_update_notifier();
-        this.start_chain_tracker_notifier();
+        // this.start_block_event_listening();
+        // this.start_fork_choice_update_notifier();
+        // this.start_chain_tracker_notifier();
     }
 
     /// Start listening to the network block event
