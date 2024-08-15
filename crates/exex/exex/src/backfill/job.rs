@@ -55,9 +55,12 @@ where
             .ok_or_else(|| ProviderError::HeaderNotFound(block_number.into()))?;
 
         // Configure the executor to use the previous block's state.
-        let executor = self.executor.executor(StateProviderDatabase::new(
-            self.provider.history_by_block_number(block_number.saturating_sub(1))?,
-        ));
+        let executor = self.executor.executor(
+            StateProviderDatabase::new(
+                self.provider.history_by_block_number(block_number.saturating_sub(1))?,
+            ),
+            None,
+        );
 
         trace!(target: "exex::backfill", number = block_number, txs = block_with_senders.block.body.len(), "Executing block");
 
