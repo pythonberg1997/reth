@@ -241,7 +241,15 @@ impl AppendableChain {
             });
         }
 
+        let start = Instant::now();
         let state = executor.execute((&block, U256::MAX, ancestor_blocks).into())?;
+        tracing::debug!(
+            target: "blockchain_tree::chain",
+            number = block.number,
+            hash = %block_hash,
+            elapsed = ?start.elapsed(),
+            "Test info: executed block"
+        );
         let BlockExecutionOutput { state, receipts, requests, .. } = state;
         externals
             .consensus
