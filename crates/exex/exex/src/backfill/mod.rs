@@ -283,10 +283,13 @@ mod tests {
 
         // Execute the block to produce a block execution output
         let mut block_execution_output = EthExecutorProvider::ethereum(chain_spec)
-            .executor(StateProviderDatabase::new(LatestStateProviderRef::new(
-                provider.tx_ref(),
-                provider.static_file_provider().clone(),
-            )))
+            .executor(
+                StateProviderDatabase::new(LatestStateProviderRef::new(
+                    provider.tx_ref(),
+                    provider.static_file_provider().clone(),
+                )),
+                None,
+            )
             .execute(BlockExecutionInput {
                 block,
                 total_difficulty: U256::ZERO,

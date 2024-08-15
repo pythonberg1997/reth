@@ -5,9 +5,11 @@ use reth_primitives::{
     parlia::Snapshot, BlockNumber, BlockWithSenders, Header, Receipt, Request, B256, U256,
 };
 use reth_prune_types::PruneModes;
+use reth_trie::HashedPostState;
 use revm::db::BundleState;
 use revm_primitives::db::Database;
 use std::fmt::Display;
+use tokio::sync::mpsc::UnboundedSender;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -187,7 +189,11 @@ pub trait BlockExecutorProvider: Send + Sync + Clone + Unpin + 'static {
     /// Creates a new executor for single block execution.
     ///
     /// This is used to execute a single block and get the changed state.
-    fn executor<DB>(&self, db: DB) -> Self::Executor<DB>
+    fn executor<DB>(
+        &self,
+        db: DB,
+        prefetch_rx: Option<UnboundedSender<HashedPostState>>,
+    ) -> Self::Executor<DB>
     where
         DB: Database<Error: Into<ProviderError> + Display>;
 
@@ -214,7 +220,11 @@ mod tests {
         type Executor<DB: Database<Error: Into<ProviderError> + Display>> = TestExecutor<DB>;
         type BatchExecutor<DB: Database<Error: Into<ProviderError> + Display>> = TestExecutor<DB>;
 
-        fn executor<DB>(&self, _db: DB) -> Self::Executor<DB>
+        fn executor<DB>(
+            &self,
+            _db: DB,
+            _prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+        ) -> Self::Executor<DB>
         where
             DB: Database<Error: Into<ProviderError> + Display>,
         {
@@ -271,7 +281,7 @@ mod tests {
     fn test_provider() {
         let provider = TestExecutorProvider;
         let db = CacheDB::<EmptyDBTyped<ProviderError>>::default();
-        let executor = provider.executor(db);
+        let executor = provider.executor(db, None);
         let block = Block {
             header: Default::default(),
             body: vec![],
