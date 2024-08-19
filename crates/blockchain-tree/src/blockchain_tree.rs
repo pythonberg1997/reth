@@ -30,6 +30,7 @@ use reth_trie::{hashed_cursor::HashedPostStateCursorFactory, StateRoot};
 use std::{
     collections::{btree_map::Entry, BTreeMap, HashSet},
     sync::Arc,
+    time::Instant,
 };
 use tracing::{debug, error, info, instrument, trace, warn};
 
@@ -1238,6 +1239,7 @@ where
                     // State root calculation can take a while, and we're sure no write transaction
                     // will be open in parallel. See https://github.com/paradigmxyz/reth/issues/6168.
                     .disable_long_read_transaction_safety();
+                let start = Instant::now();
                 let (state_root, trie_updates) = StateRoot::from_tx(provider.tx_ref())
                     .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(
                         provider.tx_ref(),
@@ -1246,6 +1248,8 @@ where
                     .with_prefix_sets(prefix_sets)
                     .root_with_updates()
                     .map_err(Into::<BlockValidationError>::into)?;
+                let elapsed = start.elapsed();
+                debug!(target: "blockchain_tree", elapsed = ?elapsed, "Test info: state root computed");
                 let tip = blocks.tip();
                 if state_root != tip.state_root {
                     return Err(ProviderError::StateRootMismatch(Box::new(RootMismatch {
