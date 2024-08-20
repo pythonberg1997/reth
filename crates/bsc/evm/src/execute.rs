@@ -210,6 +210,8 @@ where
                 }
             })?;
 
+            debug!("test: tx {:?} result state {:?}", transaction.recalculate_hash(), result, state);
+
             evm.db_mut().commit(state);
 
             self.patch_mainnet_after_tx(transaction, evm.db_mut());

@@ -338,6 +338,8 @@ where
         );
         let write_preparation_duration = time.elapsed();
 
+        debug!("test: bundle state {:?}", bundle);
+
         // log the gas per second for the range we just executed
         debug!(
             target: "sync::stages::execution",
