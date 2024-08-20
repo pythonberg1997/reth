@@ -329,6 +329,9 @@ where
         let time = Instant::now();
         let ExecutionOutcome { bundle, receipts, requests, first_block, snapshots } =
             executor.finalize();
+
+        debug!("test: bundle state {:?}", bundle);
+
         let state = ExecutionOutcome::new_with_snapshots(
             bundle,
             receipts,
@@ -337,8 +340,6 @@ where
             snapshots,
         );
         let write_preparation_duration = time.elapsed();
-
-        debug!("test: bundle state {:?}", bundle);
 
         // log the gas per second for the range we just executed
         debug!(
