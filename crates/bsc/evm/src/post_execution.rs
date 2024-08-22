@@ -315,6 +315,8 @@ where
             BscBlockExecutionError::ProviderInnerError { error: Box::new(err.into()) }
         })?;
 
+        debug!("test: system account status: {:?}", system_account.status);
+
         if system_account.account.is_none() ||
             system_account.account.as_ref().unwrap().info.balance == U256::ZERO
         {

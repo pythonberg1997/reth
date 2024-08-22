@@ -329,6 +329,9 @@ where
         let time = Instant::now();
         let ExecutionOutcome { bundle, receipts, requests, first_block, snapshots } =
             executor.finalize();
+
+        debug!("test: bundle state {:?}", bundle);
+
         let state = ExecutionOutcome::new_with_snapshots(
             bundle,
             receipts,
