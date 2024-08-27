@@ -19,7 +19,6 @@ revm-primitives.workspace = true
 reth-prune-types.workspace = true
 reth-storage-errors.workspace = true
 reth-execution-types.workspace = true
-reth-trie.workspace = true
 
 revm.workspace = true
 alloy-eips.workspace = true

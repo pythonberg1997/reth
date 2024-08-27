@@ -8134,7 +8134,6 @@ dependencies = [
  "reth-primitives",
  "reth-prune-types",
  "reth-storage-errors",
- "reth-trie",
  "revm",
  "revm-primitives",
  "tokio",
@@ -8158,7 +8157,6 @@ dependencies = [
  "reth-provider",
  "reth-prune-types",
  "reth-revm",
- "reth-trie",
  "revm-primitives",
  "thiserror",
  "tokio",
@@ -8180,7 +8178,6 @@ dependencies = [
  "reth-prune-types",
  "reth-revm",
  "reth-testing-utils",
- "reth-trie",
  "revm-primitives",
  "secp256k1",
  "serde_json",
@@ -8202,7 +8199,6 @@ dependencies = [
  "reth-primitives",
  "reth-prune-types",
  "reth-revm",
- "reth-trie",
  "revm",
  "revm-primitives",
  "thiserror",
@@ -9804,7 +9800,7 @@ dependencies = [
 
 [[package]]
 name = "reth-trie-prefetch"
-version = "1.0.3"
+version = "1.0.2"
 dependencies = [
  "alloy-rlp",
  "criterion",

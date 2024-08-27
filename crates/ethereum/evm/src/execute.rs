@@ -28,10 +28,9 @@ use reth_revm::{
     state_change::{apply_blockhashes_update, post_block_balance_increments},
     Evm, State,
 };
-use reth_trie::HashedPostState;
 use revm_primitives::{
     db::{Database, DatabaseCommit},
-    BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ResultAndState,
+    BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ResultAndState,
 };
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::debug;
@@ -71,7 +70,7 @@ where
     fn eth_executor<DB>(
         &self,
         db: DB,
-        prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+        prefetch_tx: Option<UnboundedSender<EvmState>>,
     ) -> EthBlockExecutor<EvmConfig, DB>
     where
         DB: Database<Error: Into<ProviderError>>,
@@ -114,7 +113,7 @@ where
     fn executor<DB>(
         &self,
         db: DB,
-        prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+        prefetch_tx: Option<UnboundedSender<EvmState>>,
     ) -> Self::Executor<DB>
     where
         DB: Database<Error: Into<ProviderError> + Display>,
@@ -170,7 +169,7 @@ where
         &self,
         block: &BlockWithSenders,
         mut evm: Evm<'_, Ext, &mut State<DB>>,
-        tx: Option<UnboundedSender<HashedPostState>>,
+        tx: Option<UnboundedSender<EvmState>>,
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         DB: Database,
@@ -227,8 +226,7 @@ where
             })?;
 
             if let Some(tx) = tx.as_ref() {
-                let post_state = HashedPostState::from_state(state.clone());
-                tx.send(post_state).unwrap_or_else(|err| {
+                tx.send(state.clone()).unwrap_or_else(|err| {
                     debug!(target: "evm_executor", ?err, "Failed to send post state to prefetch channel")
                 });
             }
@@ -288,7 +286,7 @@ pub struct EthBlockExecutor<EvmConfig, DB> {
     /// The state to use for execution
     state: State<DB>,
     /// Prefetch channel
-    prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+    prefetch_tx: Option<UnboundedSender<EvmState>>,
 }
 
 impl<EvmConfig, DB> EthBlockExecutor<EvmConfig, DB> {
@@ -302,7 +300,7 @@ impl<EvmConfig, DB> EthBlockExecutor<EvmConfig, DB> {
         chain_spec: Arc<ChainSpec>,
         evm_config: EvmConfig,
         state: State<DB>,
-        tx: UnboundedSender<HashedPostState>,
+        tx: UnboundedSender<EvmState>,
     ) -> Self {
         Self { executor: EthEvmExecutor { chain_spec, evm_config }, state, prefetch_tx: Some(tx) }
     }

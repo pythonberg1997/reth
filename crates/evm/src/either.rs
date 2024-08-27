@@ -10,12 +10,11 @@ use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{BlockNumber, BlockWithSenders, Header, Receipt};
 use reth_prune_types::PruneModes;
 use reth_storage_errors::provider::ProviderError;
-use revm_primitives::db::Database;
+use revm_primitives::{db::Database, EvmState};
+use tokio::sync::mpsc::UnboundedSender;
 
 // re-export Either
 pub use futures_util::future::Either;
-use reth_trie::HashedPostState;
-use tokio::sync::mpsc::UnboundedSender;
 
 impl<A, B> BlockExecutorProvider for Either<A, B>
 where
@@ -31,7 +30,7 @@ where
     fn executor<DB>(
         &self,
         db: DB,
-        prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+        prefetch_tx: Option<UnboundedSender<EvmState>>,
     ) -> Self::Executor<DB>
     where
         DB: Database<Error: Into<ProviderError> + Display>,

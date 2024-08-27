@@ -21,7 +21,6 @@ reth-execution-errors.workspace = true
 reth-execution-types.workspace = true
 reth-prune-types.workspace = true
 reth-consensus-common.workspace = true
-reth-trie.workspace = true
 
 # Optimism
 reth-optimism-consensus.workspace = true
