@@ -922,6 +922,7 @@ mod tests {
     use reth_beacon_consensus::{BeaconConsensusEngineEvent, BeaconEngineMessage};
     use reth_ethereum_engine_primitives::EthEngineTypes;
     use reth_testing_utils::generators::random_block;
+    use std::fmt::Debug;
 
     use reth_chainspec::MAINNET;
     use reth_payload_builder::test_utils::spawn_test_payload_service;
@@ -931,7 +932,13 @@ mod tests {
     use reth_rpc_types_compat::engine::payload::execution_payload_from_sealed_block;
     use reth_tasks::TokioTaskExecutor;
     use reth_tokio_util::EventSender;
-    use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+    use tokio::{
+        sync::{
+            mpsc::{unbounded_channel, UnboundedReceiver},
+            oneshot::Receiver,
+        },
+        time,
+    };
 
     fn setup_engine_api() -> (EngineApiTestHandle, EngineApi<Arc<MockEthProvider>, EthEngineTypes>)
     {
@@ -972,6 +979,48 @@ mod tests {
         let (_, api) = setup_engine_api();
         let res = api.get_client_version_v1(client.clone());
         assert_eq!(res.unwrap(), vec![client]);
+    }
+
+    #[tokio::test]
+    async fn test_oneshot() {
+        let (tx, rx) = oneshot::channel();
+
+        tokio::spawn({
+            async move {
+                run(rx).await;
+            }
+        });
+
+        println!("Sending");
+        let start = time::Instant::now();
+        let _ = tx.send(());
+        println!("{:?}", start.elapsed());
+        println!("Sent");
+
+        time::sleep(time::Duration::from_secs(10)).await;
+    }
+
+    async fn run(mut interrupt_rx: Receiver<()>) {
+        let start = time::Instant::now();
+
+        let mut i = 0u64;
+        loop {
+            i += 1;
+
+            time::sleep(time::Duration::from_secs(1)).await;
+
+            if i == 5 {
+                break;
+            }
+        }
+
+        println!("{:?}", start.elapsed());
+        println!("break");
+
+        if let Ok(_) = interrupt_rx.try_recv() {
+            println!("{:?}", start.elapsed());
+            println!("Received");
+        };
     }
 
     struct EngineApiTestHandle {

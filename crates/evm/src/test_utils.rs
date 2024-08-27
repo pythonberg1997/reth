@@ -9,8 +9,7 @@ use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{BlockNumber, BlockWithSenders, Header, Receipt};
 use reth_prune_types::PruneModes;
 use reth_storage_errors::provider::ProviderError;
-use reth_trie::HashedPostState;
-use revm_primitives::db::Database;
+use revm_primitives::{db::Database, EvmState};
 use std::{fmt::Display, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -32,7 +31,7 @@ impl BlockExecutorProvider for MockExecutorProvider {
 
     type BatchExecutor<DB: Database<Error: Into<ProviderError> + Display>> = Self;
 
-    fn executor<DB>(&self, _: DB, _: Option<UnboundedSender<HashedPostState>>) -> Self::Executor<DB>
+    fn executor<DB>(&self, _: DB, _: Option<UnboundedSender<EvmState>>) -> Self::Executor<DB>
     where
         DB: Database<Error: Into<ProviderError> + Display>,
     {

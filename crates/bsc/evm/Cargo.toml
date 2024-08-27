@@ -21,7 +21,6 @@ reth-prune-types.workspace = true
 reth-revm.workspace = true
 reth-provider.workspace = true
 reth-bsc-consensus.workspace = true
-reth-trie.workspace = true
 
 # Revm
 revm-primitives.workspace = true

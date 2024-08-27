@@ -28,10 +28,10 @@ use reth_revm::{
     db::states::bundle_state::BundleRetention,
     Evm, State,
 };
-use reth_trie::HashedPostState;
 use revm_primitives::{
     db::{Database, DatabaseCommit},
-    BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ResultAndState, TransactTo,
+    BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ResultAndState,
+    TransactTo,
 };
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc, time::Instant};
 use tokio::sync::mpsc::UnboundedSender;
@@ -85,7 +85,7 @@ where
     fn bsc_executor<DB>(
         &self,
         db: DB,
-        prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+        prefetch_tx: Option<UnboundedSender<EvmState>>,
     ) -> BscBlockExecutor<EvmConfig, DB, P>
     where
         DB: Database<Error: Into<ProviderError> + std::fmt::Display>,
@@ -133,7 +133,7 @@ where
     fn executor<DB>(
         &self,
         db: DB,
-        prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+        prefetch_tx: Option<UnboundedSender<EvmState>>,
     ) -> Self::Executor<DB>
     where
         DB: Database<Error: Into<ProviderError> + std::fmt::Display>,
@@ -187,7 +187,7 @@ where
         &self,
         block: &BlockWithSenders,
         mut evm: Evm<'_, Ext, &mut State<DB>>,
-        tx: Option<UnboundedSender<HashedPostState>>,
+        tx: Option<UnboundedSender<EvmState>>,
     ) -> Result<(Vec<TransactionSigned>, Vec<Receipt>, u64), BlockExecutionError>
     where
         DB: Database<Error: Into<ProviderError> + std::fmt::Display>,
@@ -241,8 +241,8 @@ where
             })?;
 
             if let Some(tx) = tx.as_ref() {
-                let post_state = HashedPostState::from_state(state.clone());
-                tx.send(post_state).unwrap_or_else(|err| {
+                // let post_state = HashedPostState::from_state(state.clone());
+                tx.send(state.clone()).unwrap_or_else(|err| {
                     debug!(target: "evm_executor", ?err, "Failed to send post state to prefetch channel")
                 });
             }
@@ -288,7 +288,7 @@ pub struct BscBlockExecutor<EvmConfig, DB, P> {
     /// Parlia consensus instance
     pub(crate) parlia: Arc<Parlia>,
     /// Prefetch channel
-    prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+    prefetch_tx: Option<UnboundedSender<EvmState>>,
 }
 
 impl<EvmConfig, DB, P> BscBlockExecutor<EvmConfig, DB, P> {
@@ -318,7 +318,7 @@ impl<EvmConfig, DB, P> BscBlockExecutor<EvmConfig, DB, P> {
         parlia_config: ParliaConfig,
         state: State<DB>,
         provider: P,
-        tx: UnboundedSender<HashedPostState>,
+        tx: UnboundedSender<EvmState>,
     ) -> Self {
         let parlia = Arc::new(Parlia::new(Arc::clone(&chain_spec), parlia_config));
         let shared_provider = Arc::new(provider);

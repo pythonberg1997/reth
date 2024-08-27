@@ -5,7 +5,6 @@ use reth_primitives::{
     parlia::Snapshot, BlockNumber, BlockWithSenders, Header, Receipt, Request, B256, U256,
 };
 use reth_prune_types::PruneModes;
-use reth_trie::HashedPostState;
 use revm::db::BundleState;
 use revm_primitives::db::Database;
 use std::fmt::Display;
@@ -13,10 +12,10 @@ use tokio::sync::mpsc::UnboundedSender;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-use std::collections::HashMap;
-
 pub use reth_execution_errors::{BlockExecutionError, BlockValidationError};
 pub use reth_storage_errors::provider::ProviderError;
+use revm_primitives::EvmState;
+use std::collections::HashMap;
 
 /// A general purpose executor trait that executes an input (e.g. block) and produces an output
 /// (e.g. state changes and receipts).
@@ -192,7 +191,7 @@ pub trait BlockExecutorProvider: Send + Sync + Clone + Unpin + 'static {
     fn executor<DB>(
         &self,
         db: DB,
-        prefetch_rx: Option<UnboundedSender<HashedPostState>>,
+        prefetch_rx: Option<UnboundedSender<EvmState>>,
     ) -> Self::Executor<DB>
     where
         DB: Database<Error: Into<ProviderError> + Display>;
@@ -223,7 +222,7 @@ mod tests {
         fn executor<DB>(
             &self,
             _db: DB,
-            _prefetch_tx: Option<UnboundedSender<HashedPostState>>,
+            _prefetch_tx: Option<UnboundedSender<EvmState>>,
         ) -> Self::Executor<DB>
         where
             DB: Database<Error: Into<ProviderError> + Display>,
