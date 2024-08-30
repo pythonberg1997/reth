@@ -210,6 +210,12 @@ where
                 }
             })?;
 
+            if block.number == 43422748 {
+                debug!("tx: {:?}", transaction.recalculate_hash());
+                debug!("result: {:?}", result);
+                debug!("state: {:?}", state);
+            }
+
             evm.db_mut().commit(state);
 
             self.patch_mainnet_after_tx(transaction, evm.db_mut());
