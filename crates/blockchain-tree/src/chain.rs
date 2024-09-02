@@ -263,10 +263,6 @@ impl AppendableChain {
             vec![snapshot.unwrap_or_default()],
         );
 
-        // stop the prefetch task.
-        #[cfg(feature = "prefetch")]
-        let _ = interrupt_tx.send(());
-
         // check state root if the block extends the canonical chain __and__ if state root
         // validation was requested.
         if block_validation_kind.is_exhaustive() {
@@ -299,8 +295,17 @@ impl AppendableChain {
                 "Validated state root"
             );
 
+            // stop the prefetch task.
+            #[cfg(feature = "prefetch")]
+            let _ = interrupt_tx.send(());
+
             Ok((initial_execution_outcome, trie_updates))
         } else {
+
+            // stop the prefetch task.
+            #[cfg(feature = "prefetch")]
+            let _ = interrupt_tx.send(());
+
             Ok((initial_execution_outcome, None))
         }
     }
