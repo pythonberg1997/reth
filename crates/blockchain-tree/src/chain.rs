@@ -225,9 +225,6 @@ impl AppendableChain {
         let block = block.unseal();
 
         #[cfg(feature = "prefetch")]
-        let (interrupt_tx, interrupt_rx) = tokio::sync::oneshot::channel();
-
-        #[cfg(feature = "prefetch")]
         {
             let mut trie_prefetch = TriePrefetch::new();
             let consistent_view = Arc::new(ConsistentDbView::new_with_latest_tip(
@@ -236,7 +233,7 @@ impl AppendableChain {
 
             tokio::spawn({
                 async move {
-                    trie_prefetch.run::<DB>(consistent_view, prefetch_rx, interrupt_rx).await;
+                    trie_prefetch.run::<DB>(consistent_view, prefetch_rx).await;
                 }
             });
         }
@@ -295,17 +292,8 @@ impl AppendableChain {
                 "Validated state root"
             );
 
-            // stop the prefetch task.
-            #[cfg(feature = "prefetch")]
-            let _ = interrupt_tx.send(());
-
             Ok((initial_execution_outcome, trie_updates))
         } else {
-
-            // stop the prefetch task.
-            #[cfg(feature = "prefetch")]
-            let _ = interrupt_tx.send(());
-
             Ok((initial_execution_outcome, None))
         }
     }

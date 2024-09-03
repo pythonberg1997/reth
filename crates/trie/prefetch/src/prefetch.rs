@@ -15,10 +15,7 @@ use reth_trie::{
 use reth_trie_parallel::{parallel_root::ParallelStateRootError, StorageRootTargets};
 use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
-use tokio::{
-    sync::{mpsc::UnboundedReceiver, oneshot::Receiver},
-    task::JoinSet,
-};
+use tokio::{sync::{mpsc::UnboundedReceiver, oneshot::Receiver}, task::JoinSet, time};
 use tracing::{debug, trace};
 
 /// Prefetch trie storage when executing transactions.
@@ -55,11 +52,11 @@ impl TriePrefetch {
         &mut self,
         consistent_view: Arc<ConsistentDbView<DB, ProviderFactory<DB>>>,
         mut prefetch_rx: UnboundedReceiver<EvmState>,
-        mut interrupt_rx: Receiver<()>,
     ) where
         DB: Database + 'static,
     {
         let mut join_set = JoinSet::new();
+        let mut interval = time::interval(time::Duration::from_secs(2));
 
         loop {
             tokio::select! {
@@ -76,7 +73,7 @@ impl TriePrefetch {
                         });
                     }
                 }
-                _ = &mut interrupt_rx => {
+                _ = interval.tick() => {
                     debug!(target: "trie::trie_prefetch", "Interrupted trie prefetch task. Unprocessed tx {:?}", prefetch_rx.len());
                     join_set.abort_all();
                     return
