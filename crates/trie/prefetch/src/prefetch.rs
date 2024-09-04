@@ -57,6 +57,7 @@ impl TriePrefetch {
     {
         let mut join_set = JoinSet::new();
         let mut interval = time::interval(time::Duration::from_secs(2));
+        let _ = interval.tick();
 
         loop {
             tokio::select! {
