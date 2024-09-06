@@ -1729,7 +1729,7 @@ where
                 let start = Instant::now();
                 match self.blockchain.insert_block_without_senders(
                     block.clone(),
-                    BlockValidationKind::SkipStateRootValidation,
+                    BlockValidationKind::Exhaustive,
                 ) {
                     Ok(status) => {
                         match status {
