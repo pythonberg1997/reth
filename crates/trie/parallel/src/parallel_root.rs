@@ -16,7 +16,7 @@ use reth_trie::{
     HashBuilder, HashedPostState, Nibbles, StorageRoot, TrieAccount,
 };
 use reth_trie_db::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 use thiserror::Error;
 use tracing::*;
 
@@ -87,6 +87,7 @@ where
         // Pre-calculate storage roots in parallel for accounts which were changed.
         tracker.set_precomputed_storage_roots(storage_root_targets.len() as u64);
         debug!(target: "trie::parallel_state_root", len = storage_root_targets.len(), "pre-calculating storage roots");
+        let start = Instant::now();
         let mut storage_roots = storage_root_targets
             .into_par_iter()
             .map(|(hashed_address, prefix_set)| {
@@ -108,6 +109,7 @@ where
                 Ok((hashed_address, storage_root_result?))
             })
             .collect::<Result<HashMap<_, _>, ParallelStateRootError>>()?;
+        debug!(target: "trie::parallel_state_root", elapsed = ?start.elapsed(), "Test info: storage roots");
 
         trace!(target: "trie::parallel_state_root", "calculating state root");
         let mut trie_updates = TrieUpdates::default();
@@ -131,6 +133,7 @@ where
 
         let mut hash_builder = HashBuilder::default().with_updates(retain_updates);
         let mut account_rlp = Vec::with_capacity(128);
+        let start = Instant::now();
         while let Some(node) = account_node_iter.try_next().map_err(ProviderError::Database)? {
             match node {
                 TrieElement::Branch(node) => {
@@ -165,7 +168,9 @@ where
                 }
             }
         }
+        debug!(target: "trie::parallel_state_root", elapsed = ?start.elapsed(), "Test info: account nodes");
 
+        let start = Instant::now();
         let root = hash_builder.root();
 
         trie_updates.finalize(
@@ -173,6 +178,7 @@ where
             hash_builder,
             prefix_sets.destroyed_accounts,
         );
+        debug!(target: "trie::parallel_state_root", elapsed = ?start.elapsed(), "Test info: finalize");
 
         let stats = tracker.finish();
 
