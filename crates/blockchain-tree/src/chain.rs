@@ -244,11 +244,6 @@ impl AppendableChain {
 
         let initial_execution_outcome = ExecutionOutcome::from((state, block.number));
 
-        // stop the prefetch task.
-        if let Some(interrupt_tx) = interrupt_tx {
-            let _ = interrupt_tx.send(());
-        }
-
         // check state root if the block extends the canonical chain __and__ if state root
         // validation was requested.
         if block_validation_kind.is_exhaustive() {
@@ -269,6 +264,12 @@ impl AppendableChain {
                 let state_root = provider.state_root(hashed_state)?;
                 (state_root, None)
             };
+
+            // stop the prefetch task.
+            if let Some(interrupt_tx) = interrupt_tx {
+                let _ = interrupt_tx.send(());
+            }
+
             if block.state_root != state_root {
                 return Err(ConsensusError::BodyStateRootDiff(
                     GotExpected { got: state_root, expected: block.state_root }.into(),
@@ -286,6 +287,11 @@ impl AppendableChain {
 
             Ok((initial_execution_outcome, trie_updates))
         } else {
+            // stop the prefetch task.
+            if let Some(interrupt_tx) = interrupt_tx {
+                let _ = interrupt_tx.send(());
+            }
+
             Ok((initial_execution_outcome, None))
         }
     }
