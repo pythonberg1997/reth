@@ -17,7 +17,7 @@ use reth_trie_parallel::{parallel_root::ParallelStateRootError, StorageRootTarge
 use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc::UnboundedReceiver, oneshot::Receiver},
+    sync::{mpsc::UnboundedReceiver, oneshot::Receiver, Mutex},
     task::JoinSet,
 };
 use tracing::{debug, trace};
@@ -29,9 +29,17 @@ pub struct TriePrefetch {
     cached_accounts: HashMap<B256, bool>,
     /// Cached storages.
     cached_storages: HashMap<B256, HashMap<B256, bool>>,
+    global_stats: Arc<Mutex<GlobalStats>>,
     /// State trie metrics.
     #[cfg(feature = "metrics")]
     metrics: TrieRootMetrics,
+}
+
+#[derive(Default, Debug)]
+pub struct GlobalStats {
+    pub branch_count: usize,
+    pub leaf_count: usize,
+    pub missing_count: usize,
 }
 
 impl Default for TriePrefetch {
@@ -48,6 +56,7 @@ impl TriePrefetch {
             cached_storages: HashMap::new(),
             #[cfg(feature = "metrics")]
             metrics: TrieRootMetrics::default(),
+            global_stats: Arc::new(Mutex::new(GlobalStats::default())),
         }
     }
 
@@ -70,8 +79,9 @@ impl TriePrefetch {
                         let hashed_state = self.deduplicate_and_update_cached(state);
 
                         let self_clone = Arc::new(self.clone());
+                        let global_stats = Arc::clone(&self.global_stats);
                         join_set.spawn(async move {
-                            if let Err(e) = self_clone.prefetch_once::<DB>(consistent_view, hashed_state).await {
+                            if let Err(e) = self_clone.prefetch_once::<DB>(consistent_view, hashed_state, global_stats).await {
                                 debug!(target: "trie::trie_prefetch", ?e, "Error while prefetching trie storage");
                             };
                         });
@@ -80,6 +90,7 @@ impl TriePrefetch {
                 _ = &mut interrupt_rx => {
                     debug!(target: "trie::trie_prefetch", "Interrupted trie prefetch task. Unprocessed tx {:?}", prefetch_rx.len());
                     join_set.abort_all();
+                    debug!(target: "trie::trie_prefetch", "test info: prefetch trie node count: {:?}", self.global_stats.lock().await);
                     return
                 }
             }
@@ -141,6 +152,7 @@ impl TriePrefetch {
         self: Arc<Self>,
         consistent_view: Arc<ConsistentDbView<DB, ProviderFactory<DB>>>,
         hashed_state: HashedPostState,
+        global_stats: Arc<Mutex<GlobalStats>>,
     ) -> Result<(), TriePrefetchError>
     where
         DB: Database,
@@ -201,22 +213,33 @@ impl TriePrefetch {
             match node {
                 TrieElement::Branch(_) => {
                     tracker.inc_branch();
+                    let mut stats = global_stats.lock().await;
+                    stats.branch_count += 1;
                 }
                 TrieElement::Leaf(hashed_address, _) => {
                     match storage_roots.remove(&hashed_address) {
-                        Some(result) => result,
+                        Some(result) => {
+                            let mut stats = global_stats.lock().await;
+                            stats.leaf_count += 1;
+                            result
+                        }
                         // Since we do not store all intermediate nodes in the database, there might
                         // be a possibility of re-adding a non-modified leaf to the hash builder.
-                        None => StorageRoot::new_hashed(
-                            trie_cursor_factory.clone(),
-                            hashed_cursor_factory.clone(),
-                            hashed_address,
-                            #[cfg(feature = "metrics")]
-                            self.metrics.clone(),
-                        )
-                        .prefetch()
-                        .ok()
-                        .unwrap_or_default(),
+                        None => {
+                            let mut stats = global_stats.lock().await;
+                            stats.missing_count += 1;
+
+                            StorageRoot::new_hashed(
+                                trie_cursor_factory.clone(),
+                                hashed_cursor_factory.clone(),
+                                hashed_address,
+                                #[cfg(feature = "metrics")]
+                                self.metrics.clone(),
+                            )
+                            .prefetch()
+                            .ok()
+                            .unwrap_or_default()
+                        }
                     };
                     tracker.inc_leaf();
                 }

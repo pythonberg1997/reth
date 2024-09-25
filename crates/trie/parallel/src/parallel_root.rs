@@ -131,14 +131,21 @@ where
 
         let mut hash_builder = HashBuilder::default().with_updates(retain_updates);
         let mut account_rlp = Vec::with_capacity(128);
+        let start = std::time::Instant::now();
+        let mut hash_elapsed = 0;
         while let Some(node) = account_node_iter.try_next().map_err(ProviderError::Database)? {
+            let start = std::time::Instant::now();
             match node {
                 TrieElement::Branch(node) => {
+                    tracker.inc_branch();
                     hash_builder.add_branch(node.key, node.value, node.children_are_in_trie);
                 }
                 TrieElement::Leaf(hashed_address, account) => {
                     let (storage_root, _, updates) = match storage_roots.remove(&hashed_address) {
-                        Some(result) => result,
+                        Some(result) => {
+                            tracker.inc_leaf();
+                            result
+                        },
                         // Since we do not store all intermediate nodes in the database, there might
                         // be a possibility of re-adding a non-modified leaf to the hash builder.
                         None => {
@@ -164,7 +171,10 @@ where
                     hash_builder.add_leaf(Nibbles::unpack(hashed_address), &account_rlp);
                 }
             }
+            hash_elapsed += start.elapsed().as_micros();
         }
+        debug!(target: "trie::parallel_state_root", "test info: total elapsed in account node {:?}", start.elapsed());
+        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed);
 
         let root = hash_builder.root();
 
@@ -179,7 +189,7 @@ where
         #[cfg(feature = "metrics")]
         self.metrics.record_state_trie(stats);
 
-        trace!(
+        debug!(
             target: "trie::parallel_state_root",
             %root,
             duration = ?stats.duration(),
@@ -187,7 +197,7 @@ where
             leaves_added = stats.leaves_added(),
             missed_leaves = stats.missed_leaves(),
             precomputed_storage_roots = stats.precomputed_storage_roots(),
-            "calculated state root"
+            "test info: calculated state root"
         );
 
         Ok((root, trie_updates))
