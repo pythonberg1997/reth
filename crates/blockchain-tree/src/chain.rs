@@ -226,6 +226,7 @@ impl AppendableChain {
 
         let block_hash = block.hash();
         let block = block.unseal();
+        tracing::debug!("test info: tx length {:?}", block.block.body.len());
 
         let state = executor.execute((&block, U256::MAX, ancestor_blocks).into())?;
         externals.consensus.validate_block_post_execution(
@@ -250,6 +251,7 @@ impl AppendableChain {
                     provider.block_execution_data_provider.execution_outcome().clone();
                 execution_outcome.extend(initial_execution_outcome.clone());
                 let hashed_state = execution_outcome.hash_state_slow();
+                tracing::debug!("test info: account length {:?}", execution_outcome.bundle.state.len());
                 ParallelStateRoot::new(consistent_view, hashed_state)
                     .incremental_root_with_updates()
                     .map(|(root, updates)| (root, Some(updates)))

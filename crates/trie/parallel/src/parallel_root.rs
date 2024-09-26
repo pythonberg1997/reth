@@ -182,9 +182,9 @@ where
             }
         }
         debug!(target: "trie::parallel_state_root", "test info: total elapsed in account node {:?}", start.elapsed());
-        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed_branch);
-        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed_leaf);
-        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed_miss);
+        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in branch node {:?}us", hash_elapsed_branch);
+        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in leaf node {:?}us", hash_elapsed_leaf);
+        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in missing node {:?}us", hash_elapsed_miss);
 
         let start = std::time::Instant::now();
         let root = hash_builder.root();

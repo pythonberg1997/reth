@@ -170,23 +170,23 @@ impl TriePrefetch {
         let mut storage_roots = storage_root_targets
             .into_par_iter()
             .map(|(hashed_address, prefix_set)| {
-                let provider_ro = consistent_view.provider_ro()?;
-                let trie_cursor_factory = DatabaseTrieCursorFactory::new(provider_ro.tx_ref());
-                let hashed_cursor_factory = HashedPostStateCursorFactory::new(
-                    DatabaseHashedCursorFactory::new(provider_ro.tx_ref()),
-                    &hashed_state_sorted,
-                );
-                let storage_root_result = StorageRoot::new_hashed(
-                    trie_cursor_factory,
-                    hashed_cursor_factory,
-                    hashed_address,
-                    #[cfg(feature = "metrics")]
-                    self.metrics.clone(),
-                )
-                .with_prefix_set(prefix_set)
-                .prefetch();
+                // let provider_ro = consistent_view.provider_ro()?;
+                // let trie_cursor_factory = DatabaseTrieCursorFactory::new(provider_ro.tx_ref());
+                // let hashed_cursor_factory = HashedPostStateCursorFactory::new(
+                //     DatabaseHashedCursorFactory::new(provider_ro.tx_ref()),
+                //     &hashed_state_sorted,
+                // );
+                // let storage_root_result = StorageRoot::new_hashed(
+                //     trie_cursor_factory,
+                //     hashed_cursor_factory,
+                //     hashed_address,
+                //     #[cfg(feature = "metrics")]
+                //     self.metrics.clone(),
+                // )
+                // .with_prefix_set(prefix_set)
+                // .prefetch();
 
-                Ok((hashed_address, storage_root_result?))
+                Ok((hashed_address, 1))
             })
             .collect::<Result<HashMap<_, _>, ParallelStateRootError>>()?;
 
