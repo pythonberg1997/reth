@@ -132,13 +132,16 @@ where
         let mut hash_builder = HashBuilder::default().with_updates(retain_updates);
         let mut account_rlp = Vec::with_capacity(128);
         let start = std::time::Instant::now();
-        let mut hash_elapsed = 0;
+        let mut hash_elapsed_branch = 0;
+        let mut hash_elapsed_leaf = 0;
+        let mut hash_elapsed_miss = 0;
         while let Some(node) = account_node_iter.try_next().map_err(ProviderError::Database)? {
-            let start = std::time::Instant::now();
             match node {
                 TrieElement::Branch(node) => {
+                    let start = std::time::Instant::now();
                     tracker.inc_branch();
                     hash_builder.add_branch(node.key, node.value, node.children_are_in_trie);
+                    hash_elapsed_branch += start.elapsed().as_micros();
                 }
                 TrieElement::Leaf(hashed_address, account) => {
                     let (storage_root, _, updates) = match storage_roots.remove(&hashed_address) {
@@ -149,15 +152,19 @@ where
                         // Since we do not store all intermediate nodes in the database, there might
                         // be a possibility of re-adding a non-modified leaf to the hash builder.
                         None => {
+                            let start = std::time::Instant::now();
                             tracker.inc_missed_leaves();
-                            StorageRoot::new_hashed(
+                            let result = StorageRoot::new_hashed(
                                 trie_cursor_factory.clone(),
                                 hashed_cursor_factory.clone(),
                                 hashed_address,
                                 #[cfg(feature = "metrics")]
                                 self.metrics.storage_trie.clone(),
                             )
-                            .calculate(retain_updates)?
+                            .calculate(retain_updates)?;
+                            hash_elapsed_miss += start.elapsed().as_micros();
+
+                            result
                         }
                     };
 
@@ -165,18 +172,23 @@ where
                         trie_updates.insert_storage_updates(hashed_address, updates);
                     }
 
+                    let start = std::time::Instant::now();
                     account_rlp.clear();
                     let account = TrieAccount::from((account, storage_root));
                     account.encode(&mut account_rlp as &mut dyn BufMut);
                     hash_builder.add_leaf(Nibbles::unpack(hashed_address), &account_rlp);
+                    hash_elapsed_leaf += start.elapsed().as_micros();
                 }
             }
-            hash_elapsed += start.elapsed().as_micros();
         }
         debug!(target: "trie::parallel_state_root", "test info: total elapsed in account node {:?}", start.elapsed());
-        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed);
+        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed_branch);
+        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed_leaf);
+        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in account node {:?}us", hash_elapsed_miss);
 
+        let start = std::time::Instant::now();
         let root = hash_builder.root();
+        debug!(target: "trie::parallel_state_root", "test info: elapsed in hash builder root {:?}", start.elapsed());
 
         trie_updates.finalize(
             account_node_iter.walker,
