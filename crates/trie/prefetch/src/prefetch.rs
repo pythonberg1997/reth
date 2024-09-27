@@ -1,26 +1,28 @@
-use rayon::prelude::*;
-use reth_db::database::Database;
-use reth_execution_errors::StorageRootError;
-use reth_primitives::{revm_primitives::EvmState, B256};
-use reth_provider::{providers::ConsistentDbView, ProviderError, ProviderFactory};
-use reth_trie::{
-    hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
-    metrics::TrieRootMetrics,
-    node_iter::{TrieElement, TrieNodeIter},
-    stats::TrieTracker,
-    trie_cursor::TrieCursorFactory,
-    walker::TrieWalker,
-    HashedPostState, HashedStorage, StorageRoot,
-};
-use reth_trie_db::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
-use reth_trie_parallel::{parallel_root::ParallelStateRootError, StorageRootTargets};
 use std::{collections::HashMap, sync::Arc};
+
+use rayon::prelude::*;
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc::UnboundedReceiver, oneshot::Receiver, Mutex},
+    sync::{mpsc::UnboundedReceiver, Mutex, oneshot::Receiver},
     task::JoinSet,
 };
 use tracing::{debug, trace};
+
+use reth_db::database::Database;
+use reth_execution_errors::StorageRootError;
+use reth_primitives::{B256, revm_primitives::EvmState};
+use reth_provider::{ProviderError, ProviderFactory, providers::ConsistentDbView};
+use reth_trie::{
+    hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
+    HashedPostState,
+    HashedStorage,
+    metrics::TrieRootMetrics,
+    node_iter::{TrieElement, TrieNodeIter},
+    stats::TrieTracker,
+    StorageRoot, trie_cursor::TrieCursorFactory, walker::TrieWalker,
+};
+use reth_trie_db::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
+use reth_trie_parallel::{parallel_root::ParallelStateRootError, StorageRootTargets};
 
 /// Prefetch trie storage when executing transactions.
 #[derive(Debug, Clone)]
@@ -37,9 +39,9 @@ pub struct TriePrefetch {
 
 #[derive(Default, Debug)]
 pub struct GlobalStats {
-    pub branch_count: usize,
-    pub leaf_count: usize,
-    pub missing_count: usize,
+    pub branch_prefetched: u64,
+    pub leaves_prefetched: u64,
+    pub missed_leaves_prefetched: u64,
 }
 
 impl Default for TriePrefetch {
@@ -79,18 +81,18 @@ impl TriePrefetch {
                         let hashed_state = self.deduplicate_and_update_cached(state);
 
                         let self_clone = Arc::new(self.clone());
-                        // let global_stats = Arc::clone(&self.global_stats);
+                        let global_stats = Arc::clone(&self.global_stats);
                         join_set.spawn(async move {
-                            if let Err(e) = self_clone.prefetch_once::<DB>(consistent_view, hashed_state).await {
+                            if let Err(e) = self_clone.prefetch_once::<DB>(consistent_view, hashed_state, global_stats).await {
                                 debug!(target: "trie::trie_prefetch", ?e, "Error while prefetching trie storage");
                             };
                         });
                     }
                 }
                 _ = &mut interrupt_rx => {
-                    debug!(target: "trie::trie_prefetch", "Interrupted trie prefetch task. Unprocessed tx {:?}", prefetch_rx.len());
+                    debug!(target: "trie::trie_prefetch", "Interrupted trie prefetch task. Unprocessed tx {:?}, Processed accounts: {:?}", prefetch_rx.len(), self.cached_accounts.len());
                     join_set.abort_all();
-                    // debug!(target: "trie::trie_prefetch", "test info: prefetch trie node count: {:?}", self.global_stats.lock().await);
+                    debug!(target: "trie::trie_prefetch", "test info: prefetch account trie node count: {:?}", self.global_stats.lock().await);
                     return
                 }
             }
@@ -104,8 +106,9 @@ impl TriePrefetch {
 
         // deduplicate accounts if their keys are not present in storages
         for (address, account) in &hashed_state.accounts {
-            if !hashed_state.storages.contains_key(address) &&
-                !self.cached_accounts.contains_key(address)
+            // if !hashed_state.storages.contains_key(address) &&
+            //     !self.cached_accounts.contains_key(address)
+            if !self.cached_accounts.contains_key(address)
             {
                 self.cached_accounts.insert(*address, true);
                 new_hashed_state.accounts.insert(*address, *account);
@@ -113,36 +116,36 @@ impl TriePrefetch {
         }
 
         // deduplicate storages
-        for (address, storage) in &hashed_state.storages {
-            let cached_entry = self.cached_storages.entry(*address).or_default();
-
-            // Collect the keys to be added to `new_storage` after filtering
-            let keys_to_add: Vec<_> = storage
-                .storage
-                .iter()
-                .filter(|(slot, _)| !cached_entry.contains_key(*slot))
-                .map(|(slot, _)| *slot)
-                .collect();
-
-            // Iterate over `keys_to_add` to update `cached_entry` and `new_storage`
-            let new_storage: HashMap<_, _> = keys_to_add
-                .into_iter()
-                .map(|slot| {
-                    cached_entry.insert(slot, true);
-                    (slot, *storage.storage.get(&slot).unwrap())
-                })
-                .collect();
-
-            if !new_storage.is_empty() {
-                new_hashed_state
-                    .storages
-                    .insert(*address, HashedStorage::from_iter(false, new_storage.into_iter()));
-
-                if let Some(account) = hashed_state.accounts.get(address) {
-                    new_hashed_state.accounts.insert(*address, *account);
-                }
-            }
-        }
+        // for (address, storage) in &hashed_state.storages {
+        //     let cached_entry = self.cached_storages.entry(*address).or_default();
+        // 
+        //     // Collect the keys to be added to `new_storage` after filtering
+        //     let keys_to_add: Vec<_> = storage
+        //         .storage
+        //         .iter()
+        //         .filter(|(slot, _)| !cached_entry.contains_key(*slot))
+        //         .map(|(slot, _)| *slot)
+        //         .collect();
+        // 
+        //     // Iterate over `keys_to_add` to update `cached_entry` and `new_storage`
+        //     let new_storage: HashMap<_, _> = keys_to_add
+        //         .into_iter()
+        //         .map(|slot| {
+        //             cached_entry.insert(slot, true);
+        //             (slot, *storage.storage.get(&slot).unwrap())
+        //         })
+        //         .collect();
+        // 
+        //     if !new_storage.is_empty() {
+        //         new_hashed_state
+        //             .storages
+        //             .insert(*address, HashedStorage::from_iter(false, new_storage.into_iter()));
+        // 
+        //         if let Some(account) = hashed_state.accounts.get(address) {
+        //             new_hashed_state.accounts.insert(*address, *account);
+        //         }
+        //     }
+        // }
 
         new_hashed_state
     }
@@ -152,12 +155,13 @@ impl TriePrefetch {
         self: Arc<Self>,
         consistent_view: Arc<ConsistentDbView<DB, ProviderFactory<DB>>>,
         hashed_state: HashedPostState,
-        // global_stats: Arc<Mutex<GlobalStats>>,
+        global_stats: Arc<Mutex<GlobalStats>>,
     ) -> Result<(), TriePrefetchError>
     where
         DB: Database,
     {
         let mut tracker = TrieTracker::default();
+        let mut leaves_missed = 0u64;
 
         let prefix_sets = hashed_state.construct_prefix_sets().freeze();
         let storage_root_targets = StorageRootTargets::new(
@@ -213,21 +217,16 @@ impl TriePrefetch {
             match node {
                 TrieElement::Branch(_) => {
                     tracker.inc_branch();
-                    // let mut stats = global_stats.lock().await;
-                    // stats.branch_count += 1;
                 }
                 TrieElement::Leaf(hashed_address, _) => {
                     match storage_roots.remove(&hashed_address) {
                         Some(result) => {
-                            // let mut stats = global_stats.lock().await;
-                            // stats.leaf_count += 1;
                             result
                         }
                         // Since we do not store all intermediate nodes in the database, there might
                         // be a possibility of re-adding a non-modified leaf to the hash builder.
                         None => {
-                            // let mut stats = global_stats.lock().await;
-                            // stats.missing_count += 1;
+                            leaves_missed += 1;
 
                             StorageRoot::new_hashed(
                                 trie_cursor_factory.clone(),
@@ -251,11 +250,17 @@ impl TriePrefetch {
         #[cfg(feature = "metrics")]
         self.metrics.record(stats);
 
-        trace!(
+        let mut gstats = global_stats.lock().await;
+        gstats.branch_prefetched += stats.branches_added();
+        gstats.leaves_prefetched += stats.leaves_added() - leaves_missed;
+        gstats.missed_leaves_prefetched += leaves_missed;
+
+        debug!(
             target: "trie::trie_prefetch",
             duration = ?stats.duration(),
             branches_added = stats.branches_added(),
-            leaves_added = stats.leaves_added(),
+            leaves_added = stats.leaves_added()-leaves_missed,
+            leaves_missed = leaves_missed,
             "prefetched account trie"
         );
 

@@ -1,24 +1,27 @@
-#[cfg(feature = "metrics")]
-use crate::metrics::ParallelStateRootMetrics;
-use crate::{stats::ParallelTrieTracker, storage_root_targets::StorageRootTargets};
+use std::collections::HashMap;
+
 use alloy_rlp::{BufMut, Encodable};
 use rayon::prelude::*;
+use thiserror::Error;
+use tracing::*;
+
 use reth_db_api::database::Database;
 use reth_execution_errors::StorageRootError;
 use reth_primitives::B256;
-use reth_provider::{providers::ConsistentDbView, DatabaseProviderFactory, ProviderError};
+use reth_provider::{DatabaseProviderFactory, ProviderError, providers::ConsistentDbView};
 use reth_trie::{
+    HashBuilder,
     hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
+    HashedPostState,
+    Nibbles,
     node_iter::{TrieElement, TrieNodeIter},
-    trie_cursor::TrieCursorFactory,
-    updates::TrieUpdates,
-    walker::TrieWalker,
-    HashBuilder, HashedPostState, Nibbles, StorageRoot, TrieAccount,
+    StorageRoot, trie_cursor::TrieCursorFactory, TrieAccount, updates::TrieUpdates, walker::TrieWalker,
 };
 use reth_trie_db::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
-use std::collections::HashMap;
-use thiserror::Error;
-use tracing::*;
+
+use crate::{stats::ParallelTrieTracker, storage_root_targets::StorageRootTargets};
+#[cfg(feature = "metrics")]
+use crate::metrics::ParallelStateRootMetrics;
 
 /// Parallel incremental state root calculator.
 ///
@@ -181,14 +184,14 @@ where
                 }
             }
         }
-        debug!(target: "trie::parallel_state_root", "test info: total elapsed in account node {:?}", start.elapsed());
-        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in branch node {:?}us", hash_elapsed_branch);
-        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in leaf node {:?}us", hash_elapsed_leaf);
-        debug!(target: "trie::parallel_state_root", "test info: hash elapsed in missing node {:?}us", hash_elapsed_miss);
+        debug!(target: "trie::parallel_state_root", "test info: total time elapsed {:?}", start.elapsed());
+        debug!(target: "trie::parallel_state_root", "test info: time elapsed in missing leaves {:?}us", hash_elapsed_miss);
+        // debug!(target: "trie::parallel_state_root", "test info: time elapsed in hash branch node {:?}us", hash_elapsed_branch);
+        // debug!(target: "trie::parallel_state_root", "test info: time elapsed in hash leaf node {:?}us", hash_elapsed_leaf);
 
         let start = std::time::Instant::now();
         let root = hash_builder.root();
-        debug!(target: "trie::parallel_state_root", "test info: elapsed in hash builder root {:?}", start.elapsed());
+        debug!(target: "trie::parallel_state_root", "test info: total time elapsed in hash builder {:?}us", start.elapsed().as_micros()+hash_elapsed_branch+hash_elapsed_leaf);
 
         trie_updates.finalize(
             account_node_iter.walker,
@@ -240,11 +243,13 @@ impl From<ParallelStateRootError> for ProviderError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::Rng;
-    use reth_primitives::{keccak256, Account, Address, StorageEntry, U256};
-    use reth_provider::{test_utils::create_test_provider_factory, HashingWriter};
-    use reth_trie::{test_utils, HashedStorage};
+
+    use reth_primitives::{Account, Address, keccak256, StorageEntry, U256};
+    use reth_provider::{HashingWriter, test_utils::create_test_provider_factory};
+    use reth_trie::{HashedStorage, test_utils};
+
+    use super::*;
 
     #[tokio::test]
     async fn random_parallel_root() {
