@@ -117,11 +117,9 @@ impl TriePrefetch {
         let hashed_state = HashedPostState::from_state(state);
         let mut new_hashed_state = HashedPostState::default();
 
-        // deduplicate accounts if their keys are not present in storages
+        // deduplicate accounts
         for (address, account) in &hashed_state.accounts {
-            if !hashed_state.storages.contains_key(address) &&
-                !self.cached_accounts.contains_key(address)
-            {
+            if self.cached_accounts.contains_key(address) {
                 self.cached_accounts.insert(*address, true);
                 new_hashed_state.accounts.insert(*address, *account);
             }
