@@ -1,24 +1,27 @@
-#[cfg(feature = "metrics")]
-use crate::metrics::ParallelStateRootMetrics;
-use crate::{stats::ParallelTrieTracker, storage_root_targets::StorageRootTargets};
+use std::collections::HashMap;
+
 use alloy_rlp::{BufMut, Encodable};
 use rayon::prelude::*;
+use thiserror::Error;
+use tracing::*;
+
 use reth_db_api::database::Database;
 use reth_execution_errors::StorageRootError;
 use reth_primitives::B256;
-use reth_provider::{providers::ConsistentDbView, DatabaseProviderFactory, ProviderError};
+use reth_provider::{DatabaseProviderFactory, ProviderError, providers::ConsistentDbView};
 use reth_trie::{
+    HashBuilder,
     hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
+    HashedPostState,
+    Nibbles,
     node_iter::{TrieElement, TrieNodeIter},
-    trie_cursor::TrieCursorFactory,
-    updates::TrieUpdates,
-    walker::TrieWalker,
-    HashBuilder, HashedPostState, Nibbles, StorageRoot, TrieAccount,
+    StorageRoot, trie_cursor::TrieCursorFactory, TrieAccount, updates::TrieUpdates, walker::TrieWalker,
 };
 use reth_trie_db::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
-use std::collections::HashMap;
-use thiserror::Error;
-use tracing::*;
+
+use crate::{stats::ParallelTrieTracker, storage_root_targets::StorageRootTargets};
+#[cfg(feature = "metrics")]
+use crate::metrics::ParallelStateRootMetrics;
 
 /// Parallel incremental state root calculator.
 ///
@@ -129,14 +132,17 @@ where
             hashed_cursor_factory.hashed_account_cursor().map_err(ProviderError::Database)?,
         );
 
+        let account_tree_start = std::time::Instant::now();
         let mut hash_builder = HashBuilder::default().with_updates(retain_updates);
         let mut account_rlp = Vec::with_capacity(128);
         while let Some(node) = account_node_iter.try_next().map_err(ProviderError::Database)? {
             match node {
                 TrieElement::Branch(node) => {
+                    tracker.inc_branch();
                     hash_builder.add_branch(node.key, node.value, node.children_are_in_trie);
                 }
                 TrieElement::Leaf(hashed_address, account) => {
+                    tracker.inc_leaf();
                     let (storage_root, _, updates) = match storage_roots.remove(&hashed_address) {
                         Some(result) => result,
                         // Since we do not store all intermediate nodes in the database, there might
@@ -174,15 +180,18 @@ where
             prefix_sets.destroyed_accounts,
         );
 
+        let account_tree_duration = account_tree_start.elapsed();
         let stats = tracker.finish();
 
         #[cfg(feature = "metrics")]
         self.metrics.record_state_trie(stats);
 
-        trace!(
+        debug!(
             target: "trie::parallel_state_root",
             %root,
             duration = ?stats.duration(),
+            account_tree_duration = ?account_tree_duration,
+            storage_trees_duration = ?(stats.duration() - account_tree_duration),
             branches_added = stats.branches_added(),
             leaves_added = stats.leaves_added(),
             missed_leaves = stats.missed_leaves(),
@@ -218,11 +227,13 @@ impl From<ParallelStateRootError> for ProviderError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::Rng;
-    use reth_primitives::{keccak256, Account, Address, StorageEntry, U256};
-    use reth_provider::{test_utils::create_test_provider_factory, HashingWriter};
-    use reth_trie::{test_utils, HashedStorage};
+
+    use reth_primitives::{Account, Address, keccak256, StorageEntry, U256};
+    use reth_provider::{HashingWriter, test_utils::create_test_provider_factory};
+    use reth_trie::{HashedStorage, test_utils};
+
+    use super::*;
 
     #[tokio::test]
     async fn random_parallel_root() {
