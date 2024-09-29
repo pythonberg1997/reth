@@ -29,7 +29,6 @@ use reth_trie_prefetch::TriePrefetch;
 use std::{
     collections::{BTreeMap, HashMap},
     ops::{Deref, DerefMut},
-    sync::Arc,
     time::Instant,
 };
 
@@ -235,11 +234,6 @@ impl AppendableChain {
 
         let initial_execution_outcome = ExecutionOutcome::from((state, block.number));
 
-        // stop the prefetch task.
-        if let Some(interrupt_tx) = interrupt_tx {
-            let _ = interrupt_tx.send(());
-        }
-
         // check state root if the block extends the canonical chain __and__ if state root
         // validation was requested.
         if block_validation_kind.is_exhaustive() {
@@ -260,6 +254,12 @@ impl AppendableChain {
                 let state_root = provider.state_root(hashed_state)?;
                 (state_root, None)
             };
+
+            // stop the prefetch task.
+            if let Some(interrupt_tx) = interrupt_tx {
+                let _ = interrupt_tx.send(());
+            }
+
             if block.state_root != state_root {
                 tracing::debug!(
                     target: "blockchain_tree::chain",
@@ -284,6 +284,11 @@ impl AppendableChain {
 
             Ok((initial_execution_outcome, trie_updates))
         } else {
+            // stop the prefetch task.
+            if let Some(interrupt_tx) = interrupt_tx {
+                let _ = interrupt_tx.send(());
+            }
+
             Ok((initial_execution_outcome, None))
         }
     }
@@ -358,18 +363,11 @@ impl AppendableChain {
         let (interrupt_tx, interrupt_rx) = tokio::sync::oneshot::channel();
 
         let mut trie_prefetch = TriePrefetch::new();
-        let consistent_view = if let Ok(view) =
-            ConsistentDbView::new_with_latest_tip(externals.provider_factory.clone())
-        {
-            view
-        } else {
-            tracing::debug!("Failed to create consistent view for trie prefetch");
-            return (None, None)
-        };
+        let provider_factory = externals.provider_factory.clone();
 
         tokio::spawn({
             async move {
-                trie_prefetch.run::<DB>(Arc::new(consistent_view), prefetch_rx, interrupt_rx).await;
+                trie_prefetch.run::<DB>(provider_factory, prefetch_rx, interrupt_rx).await;
             }
         });
 

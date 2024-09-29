@@ -1,4 +1,13 @@
+use std::{collections::HashMap, sync::Arc};
+
 use rayon::prelude::*;
+use thiserror::Error;
+use tokio::{
+    sync::{mpsc::UnboundedReceiver, oneshot::Receiver},
+    task::JoinSet,
+};
+use tracing::{debug, trace};
+
 use reth_db::database::Database;
 use reth_execution_errors::StorageRootError;
 use reth_primitives::{revm_primitives::EvmState, B256};
@@ -14,13 +23,6 @@ use reth_trie::{
 };
 use reth_trie_db::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
 use reth_trie_parallel::{parallel_root::ParallelStateRootError, StorageRootTargets};
-use std::{collections::HashMap, sync::Arc};
-use thiserror::Error;
-use tokio::{
-    sync::{mpsc::UnboundedReceiver, oneshot::Receiver},
-    task::JoinSet,
-};
-use tracing::{debug, trace};
 
 /// Prefetch trie storage when executing transactions.
 #[derive(Debug, Clone)]
@@ -54,7 +56,7 @@ impl TriePrefetch {
     /// Run the prefetching task.
     pub async fn run<DB>(
         &mut self,
-        consistent_view: Arc<ConsistentDbView<DB, ProviderFactory<DB>>>,
+        provider_factory: ProviderFactory<DB>,
         mut prefetch_rx: UnboundedReceiver<EvmState>,
         mut interrupt_rx: Receiver<()>,
     ) where
@@ -66,13 +68,22 @@ impl TriePrefetch {
             tokio::select! {
                 state = prefetch_rx.recv() => {
                     if let Some(state) = state {
-                        let consistent_view = Arc::clone(&consistent_view);
                         let hashed_state = self.deduplicate_and_update_cached(state);
 
                         let self_clone = Arc::new(self.clone());
+                        let consistent_view = ConsistentDbView::new_with_latest_tip(provider_factory.clone()).unwrap();
+                        let state = hashed_state.clone();
                         join_set.spawn(async move {
-                            if let Err(e) = self_clone.prefetch_once::<DB>(consistent_view, hashed_state).await {
-                                debug!(target: "trie::trie_prefetch", ?e, "Error while prefetching trie storage");
+                            if let Err(e) = self_clone.prefetch_account::<DB>(consistent_view, state).await {
+                                debug!(target: "trie::trie_prefetch", ?e, "Error while prefetching account trie storage");
+                            };
+                        });
+
+                        let self_clone = Arc::new(self.clone());
+                        let consistent_view = ConsistentDbView::new_with_latest_tip(provider_factory.clone()).unwrap();
+                        join_set.spawn(async move {
+                            if let Err(e) = self_clone.prefetch_storage::<DB>(consistent_view, hashed_state).await {
+                                debug!(target: "trie::trie_prefetch", ?e, "Error while prefetching storage trie storage");
                             };
                         });
                     }
@@ -136,10 +147,10 @@ impl TriePrefetch {
         new_hashed_state
     }
 
-    /// Prefetch trie storage for the given hashed state.
-    pub async fn prefetch_once<DB>(
+    /// Prefetch account trie storage for the given hashed state.
+    pub async fn prefetch_account<DB>(
         self: Arc<Self>,
-        consistent_view: Arc<ConsistentDbView<DB, ProviderFactory<DB>>>,
+        consistent_view: ConsistentDbView<DB, ProviderFactory<DB>>,
         hashed_state: HashedPostState,
     ) -> Result<(), TriePrefetchError>
     where
@@ -154,28 +165,9 @@ impl TriePrefetch {
         );
         let hashed_state_sorted = hashed_state.into_sorted();
 
-        trace!(target: "trie::trie_prefetch", "start prefetching trie storages");
         let mut storage_roots = storage_root_targets
             .into_par_iter()
-            .map(|(hashed_address, prefix_set)| {
-                let provider_ro = consistent_view.provider_ro()?;
-                let trie_cursor_factory = DatabaseTrieCursorFactory::new(provider_ro.tx_ref());
-                let hashed_cursor_factory = HashedPostStateCursorFactory::new(
-                    DatabaseHashedCursorFactory::new(provider_ro.tx_ref()),
-                    &hashed_state_sorted,
-                );
-                let storage_root_result = StorageRoot::new_hashed(
-                    trie_cursor_factory,
-                    hashed_cursor_factory,
-                    hashed_address,
-                    #[cfg(feature = "metrics")]
-                    self.metrics.clone(),
-                )
-                .with_prefix_set(prefix_set)
-                .prefetch();
-
-                Ok((hashed_address, storage_root_result?))
-            })
+            .map(|(hashed_address, _)| Ok((hashed_address, 1)))
             .collect::<Result<HashMap<_, _>, ParallelStateRootError>>()?;
 
         trace!(target: "trie::trie_prefetch", "prefetching account tries");
@@ -235,6 +227,48 @@ impl TriePrefetch {
             leaves_added = stats.leaves_added(),
             "prefetched account trie"
         );
+
+        Ok(())
+    }
+
+    /// Prefetch storage trie storage for the given hashed state.
+    pub async fn prefetch_storage<DB>(
+        self: Arc<Self>,
+        consistent_view: ConsistentDbView<DB, ProviderFactory<DB>>,
+        hashed_state: HashedPostState,
+    ) -> Result<(), TriePrefetchError>
+    where
+        DB: Database,
+    {
+        let prefix_sets = hashed_state.construct_prefix_sets().freeze();
+        let storage_root_targets = StorageRootTargets::new(
+            hashed_state.accounts.keys().copied(),
+            prefix_sets.storage_prefix_sets,
+        );
+        let hashed_state_sorted = hashed_state.into_sorted();
+
+        storage_root_targets
+            .into_par_iter()
+            .map(|(hashed_address, prefix_set)| {
+                let provider_ro = consistent_view.provider_ro()?;
+                let trie_cursor_factory = DatabaseTrieCursorFactory::new(provider_ro.tx_ref());
+                let hashed_cursor_factory = HashedPostStateCursorFactory::new(
+                    DatabaseHashedCursorFactory::new(provider_ro.tx_ref()),
+                    &hashed_state_sorted,
+                );
+                let storage_root_result = StorageRoot::new_hashed(
+                    trie_cursor_factory,
+                    hashed_cursor_factory,
+                    hashed_address,
+                    #[cfg(feature = "metrics")]
+                    self.metrics.clone(),
+                )
+                .with_prefix_set(prefix_set)
+                .prefetch();
+
+                Ok((hashed_address, storage_root_result?))
+            })
+            .collect::<Result<HashMap<_, _>, ParallelStateRootError>>()?;
 
         Ok(())
     }

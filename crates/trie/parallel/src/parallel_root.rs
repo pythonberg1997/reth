@@ -131,9 +131,11 @@ where
 
         let mut hash_builder = HashBuilder::default().with_updates(retain_updates);
         let mut account_rlp = Vec::with_capacity(128);
+        let start = std::time::Instant::now();
         while let Some(node) = account_node_iter.try_next().map_err(ProviderError::Database)? {
             match node {
                 TrieElement::Branch(node) => {
+                    tracker.inc_branch();
                     hash_builder.add_branch(node.key, node.value, node.children_are_in_trie);
                 }
                 TrieElement::Leaf(hashed_address, account) => {
@@ -154,6 +156,8 @@ where
                         }
                     };
 
+                    tracker.inc_leaf();
+
                     if retain_updates {
                         trie_updates.insert_storage_updates(hashed_address, updates);
                     }
@@ -165,6 +169,7 @@ where
                 }
             }
         }
+        debug!(target: "trie::parallel_state_root", "test info: total time elapsed {:?}", start.elapsed());
 
         let root = hash_builder.root();
 
@@ -179,7 +184,7 @@ where
         #[cfg(feature = "metrics")]
         self.metrics.record_state_trie(stats);
 
-        trace!(
+        debug!(
             target: "trie::parallel_state_root",
             %root,
             duration = ?stats.duration(),
@@ -187,7 +192,7 @@ where
             leaves_added = stats.leaves_added(),
             missed_leaves = stats.missed_leaves(),
             precomputed_storage_roots = stats.precomputed_storage_roots(),
-            "calculated state root"
+            "test info: calculated state root"
         );
 
         Ok((root, trie_updates))
