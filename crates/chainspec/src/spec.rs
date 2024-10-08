@@ -11,10 +11,13 @@ use reth_ethereum_forks::{
     ForkFilter, ForkFilterKey, ForkHash, ForkId, Hardfork, Head, DEV_HARDFORKS,
 };
 use reth_network_peers::{
-    base_nodes, base_testnet_nodes, bsc_mainnet_nodes, bsc_testnet_nodes, holesky_nodes,
-    mainnet_nodes, op_nodes, op_testnet_nodes, opbnb_mainnet_nodes, opbnb_testnet_nodes,
+    base_nodes, base_testnet_nodes, holesky_nodes, mainnet_nodes, op_nodes, op_testnet_nodes,
     sepolia_nodes, NodeRecord,
 };
+#[cfg(feature = "bsc")]
+use reth_network_peers::{bsc_mainnet_nodes, bsc_testnet_nodes};
+#[cfg(feature = "opbnb")]
+use reth_network_peers::{opbnb_mainnet_nodes, opbnb_testnet_nodes};
 use reth_primitives_traits::{
     constants::{
         DEV_GENESIS_HASH, EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS, ETHEREUM_BLOCK_GAS_LIMIT,
