@@ -630,7 +630,16 @@ where
         );
         task.set_invalid_block_hook(invalid_block_hook);
         let incoming = task.incoming_tx.clone();
-        std::thread::Builder::new().name("Tree Task".to_string()).spawn(|| task.run()).unwrap();
+        std::thread::Builder::new()
+            .name("Tree Task".to_string())
+            .spawn(move || {
+                let runtime =
+                    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                runtime.block_on(async {
+                    task.run();
+                });
+            })
+            .unwrap();
         (incoming, outgoing)
     }
 
@@ -1203,8 +1212,11 @@ where
                     EngineApiRequest::Beacon(request) => {
                         match request {
                             BeaconEngineMessage::ForkchoiceUpdated { state, payload_attrs, tx } => {
+                                let start = Instant::now();
                                 let mut output = self.on_forkchoice_updated(state, payload_attrs);
+                                debug!("Forkchoice updated took {:?}", start.elapsed());
 
+                                let start = Instant::now();
                                 if let Ok(res) = &mut output {
                                     // track last received forkchoice state
                                     self.state
@@ -1220,12 +1232,15 @@ where
                                     // handle the event if any
                                     self.on_maybe_tree_event(res.event.take())?;
                                 }
+                                debug!("Sending response to beacon1 took {:?}", start.elapsed());
 
+                                let start = Instant::now();
                                 if let Err(err) =
                                     tx.send(output.map(|o| o.outcome).map_err(Into::into))
                                 {
                                     error!("Failed to send event: {err:?}");
                                 }
+                                debug!("Sent response to beacon2 took {:?}", start.elapsed());
                             }
                             BeaconEngineMessage::NewPayload { payload, cancun_fields, tx } => {
                                 let output = self.on_new_payload(payload, cancun_fields);
