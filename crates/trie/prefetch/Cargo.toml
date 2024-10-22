@@ -33,6 +33,7 @@ tracing.workspace = true
 thiserror.workspace = true
 derive_more.workspace = true
 rayon.workspace = true
+dashmap = "6.1.0"
 
 # async
 tokio = { workspace = true, default-features = false, features = ["sync", "rt", "macros"] }

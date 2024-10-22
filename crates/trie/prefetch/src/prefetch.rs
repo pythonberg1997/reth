@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
+use dashmap::DashMap;
 use rayon::prelude::*;
 use reth_execution_errors::StorageRootError;
 use reth_primitives::revm_primitives::EvmState;
@@ -13,6 +14,7 @@ use reth_trie::{
     node_iter::{TrieElement, TrieNodeIter},
     stats::TrieTracker,
     trie_cursor::TrieCursorFactory,
+    updates::StorageTrieUpdates,
     walker::TrieWalker,
     HashedPostState, HashedStorage, StorageRoot,
 };
@@ -62,6 +64,7 @@ impl TriePrefetch {
         provider_factory: Factory,
         mut prefetch_rx: UnboundedReceiver<EvmState>,
         mut interrupt_rx: Receiver<()>,
+        missing_leaves_cache: Arc<DashMap<B256, (B256, StorageTrieUpdates)>>,
     ) where
         Factory: DatabaseProviderFactory<Provider: BlockReader> + Clone + 'static,
     {
@@ -78,8 +81,9 @@ impl TriePrefetch {
                         let consistent_view = ConsistentDbView::new_with_latest_tip(provider_factory.clone()).unwrap();
                         let hashed_state_clone = hashed_state.clone();
                         let arc_tracker_clone = Arc::clone(&arc_tracker);
+                        let missing_leaves_cache = Arc::clone(&missing_leaves_cache);
                         join_set.spawn(async move {
-                            if let Err(e) = self_clone.prefetch_accounts::<Factory>(consistent_view, hashed_state_clone, arc_tracker_clone).await {
+                            if let Err(e) = self_clone.prefetch_accounts::<Factory>(consistent_view, hashed_state_clone, arc_tracker_clone, missing_leaves_cache).await {
                                 debug!(target: "trie::trie_prefetch", ?e, "Error while prefetching account trie storage");
                             };
                         });
@@ -167,6 +171,7 @@ impl TriePrefetch {
         consistent_view: ConsistentDbView<Factory>,
         hashed_state: HashedPostState,
         arc_prefetch_tracker: Arc<Mutex<TriePrefetchTracker>>,
+        missing_leaves_cache: Arc<DashMap<B256, (B256, StorageTrieUpdates)>>,
     ) -> Result<(), TriePrefetchError>
     where
         Factory: DatabaseProviderFactory<Provider: BlockReader>,
@@ -213,19 +218,23 @@ impl TriePrefetch {
                 TrieElement::Leaf(hashed_address, _) => {
                     tracker.inc_leaf();
                     match storage_roots.remove(&hashed_address) {
-                        Some(result) => result,
+                        Some(_) => (),
                         // Since we do not store all intermediate nodes in the database, there might
                         // be a possibility of re-adding a non-modified leaf to the hash builder.
-                        None => StorageRoot::new_hashed(
-                            trie_cursor_factory.clone(),
-                            hashed_cursor_factory.clone(),
-                            hashed_address,
-                            #[cfg(feature = "metrics")]
-                            self.metrics.clone(),
-                        )
-                        .prefetch()
-                        .ok()
-                        .unwrap_or_default(),
+                        None => {
+                            if let Ok((storage_root, _, updates)) = StorageRoot::new_hashed(
+                                trie_cursor_factory.clone(),
+                                hashed_cursor_factory.clone(),
+                                hashed_address,
+                                #[cfg(feature = "metrics")]
+                                self.metrics.clone(),
+                            )
+                            .calculate(true)
+                            {
+                                missing_leaves_cache
+                                    .insert(hashed_address, (storage_root, updates));
+                            }
+                        }
                     };
                 }
             }

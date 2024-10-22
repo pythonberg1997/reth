@@ -48,6 +48,7 @@ metrics.workspace = true
 # misc
 aquamarine.workspace = true
 linked_hash_set.workspace = true
+dashmap = "6.1.0"
 
 [dev-dependencies]
 reth-chainspec.workspace = true

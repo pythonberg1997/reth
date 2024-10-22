@@ -7,6 +7,7 @@ use super::externals::TreeExternals;
 use crate::BundleStateDataRef;
 use alloy_eips::ForkBlock;
 use alloy_primitives::{map::HashMap, BlockHash, BlockNumber, B256, U256};
+use dashmap::DashMap;
 use reth_blockchain_tree_api::{
     error::{BlockchainTreeError, InsertBlockErrorKind},
     BlockAttachment, BlockValidationKind,
@@ -23,13 +24,17 @@ use reth_provider::{
     FullExecutionDataProvider, ProviderError, StateRootProvider, TryIntoHistoricalStateProvider,
 };
 use reth_revm::database::StateProviderDatabase;
-use reth_trie::{updates::TrieUpdates, HashedPostState, TrieInput};
+use reth_trie::{
+    updates::{StorageTrieUpdates, TrieUpdates},
+    HashedPostState, TrieInput,
+};
 use reth_trie_parallel::parallel_root::ParallelStateRoot;
 use reth_trie_prefetch::TriePrefetch;
 use std::{
     clone::Clone,
     collections::BTreeMap,
     ops::{Deref, DerefMut},
+    sync::Arc,
     time::Instant,
 };
 
@@ -213,8 +218,11 @@ impl AppendableChain {
 
         let provider = BundleStateProvider::new(state_provider, bundle_state_data_provider);
 
-        let (prefetch_tx, interrupt_tx) =
-            if enable_prefetch { Self::setup_prefetch(externals) } else { (None, None) };
+        let (prefetch_tx, interrupt_tx, missing_leaves_cache) = if enable_prefetch {
+            Self::setup_prefetch(externals)
+        } else {
+            (None, None, Default::default())
+        };
 
         let db = StateProviderDatabase::new(&provider);
         let executor = externals.executor_factory.executor(db, prefetch_tx);
@@ -243,7 +251,7 @@ impl AppendableChain {
                     consistent_view,
                     TrieInput::from_state(execution_outcome.hash_state_slow()),
                 )
-                .incremental_root_with_updates()
+                .incremental_root_with_updates_and_cache(missing_leaves_cache)
                 .map(|(root, updates)| (root, Some(updates)))
                 .map_err(ProviderError::from)?
             } else {
@@ -348,6 +356,7 @@ impl AppendableChain {
     ) -> (
         Option<tokio::sync::mpsc::UnboundedSender<EvmState>>,
         Option<tokio::sync::oneshot::Sender<()>>,
+        Arc<DashMap<B256, (B256, StorageTrieUpdates)>>,
     )
     where
         N: ProviderNodeTypes,
@@ -358,13 +367,17 @@ impl AppendableChain {
 
         let mut trie_prefetch = TriePrefetch::new();
         let provider_factory = externals.provider_factory.clone();
+        let missing_leaves_cache = Arc::new(DashMap::new());
+        let missing_leaves_cache_clone = Arc::clone(&missing_leaves_cache);
 
         tokio::spawn({
             async move {
-                trie_prefetch.run(provider_factory, prefetch_rx, interrupt_rx).await;
+                trie_prefetch
+                    .run(provider_factory, prefetch_rx, interrupt_rx, missing_leaves_cache_clone)
+                    .await;
             }
         });
 
-        (Some(prefetch_tx), Some(interrupt_tx))
+        (Some(prefetch_tx), Some(interrupt_tx), missing_leaves_cache)
     }
 }
