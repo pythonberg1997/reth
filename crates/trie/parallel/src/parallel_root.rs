@@ -2,6 +2,7 @@
 use crate::metrics::ParallelStateRootMetrics;
 use crate::{stats::ParallelTrieTracker, storage_root_targets::StorageRootTargets};
 use alloy_rlp::{BufMut, Encodable};
+use dashmap::DashMap;
 use rayon::prelude::*;
 use reth_execution_errors::StorageRootError;
 use reth_primitives::B256;
@@ -12,12 +13,12 @@ use reth_trie::{
     hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
     node_iter::{TrieElement, TrieNodeIter},
     trie_cursor::{InMemoryTrieCursorFactory, TrieCursorFactory},
-    updates::TrieUpdates,
+    updates::{StorageTrieUpdates, TrieUpdates},
     walker::TrieWalker,
     HashBuilder, Nibbles, StorageRoot, TrieAccount, TrieInput,
 };
 use reth_trie_db::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
 use tracing::*;
 
@@ -62,19 +63,28 @@ where
 {
     /// Calculate incremental state root in parallel.
     pub fn incremental_root(self) -> Result<B256, ParallelStateRootError> {
-        self.calculate(false).map(|(root, _)| root)
+        self.calculate(false, None).map(|(root, _)| root)
     }
 
     /// Calculate incremental state root with updates in parallel.
     pub fn incremental_root_with_updates(
         self,
     ) -> Result<(B256, TrieUpdates), ParallelStateRootError> {
-        self.calculate(true)
+        self.calculate(true, None)
+    }
+
+    /// Calculate incremental state root with missing leaves cache.
+    pub fn incremental_root_with_updates_and_cache(
+        self,
+        miss_leaves_cache: Arc<DashMap<B256, (B256, StorageTrieUpdates)>>,
+    ) -> Result<(B256, TrieUpdates), ParallelStateRootError> {
+        self.calculate(true, Some(miss_leaves_cache))
     }
 
     fn calculate(
         self,
         retain_updates: bool,
+        miss_leaves_cache: Option<Arc<DashMap<B256, (B256, StorageTrieUpdates)>>>,
     ) -> Result<(B256, TrieUpdates), ParallelStateRootError> {
         let mut tracker = ParallelTrieTracker::default();
         let trie_nodes_sorted = self.input.nodes.into_sorted();
@@ -153,14 +163,30 @@ where
                         // be a possibility of re-adding a non-modified leaf to the hash builder.
                         None => {
                             tracker.inc_missed_leaves();
-                            StorageRoot::new_hashed(
-                                trie_cursor_factory.clone(),
-                                hashed_cursor_factory.clone(),
-                                hashed_address,
-                                #[cfg(feature = "metrics")]
-                                self.metrics.storage_trie.clone(),
-                            )
-                            .calculate(retain_updates)?
+                            if let Some(cache) = miss_leaves_cache.clone() {
+                                if let Some(value) = cache.get(&hashed_address) {
+                                    let (root, updates) = value.value();
+                                    (*root, 0usize, updates.clone())
+                                } else {
+                                    StorageRoot::new_hashed(
+                                        trie_cursor_factory.clone(),
+                                        hashed_cursor_factory.clone(),
+                                        hashed_address,
+                                        #[cfg(feature = "metrics")]
+                                        self.metrics.storage_trie.clone(),
+                                    )
+                                    .calculate(retain_updates)?
+                                }
+                            } else {
+                                StorageRoot::new_hashed(
+                                    trie_cursor_factory.clone(),
+                                    hashed_cursor_factory.clone(),
+                                    hashed_address,
+                                    #[cfg(feature = "metrics")]
+                                    self.metrics.storage_trie.clone(),
+                                )
+                                .calculate(retain_updates)?
+                            }
                         }
                     };
 

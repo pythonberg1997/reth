@@ -4,6 +4,7 @@ use crate::{
     engine::{DownloadRequest, EngineApiEvent, FromEngine},
     persistence::PersistenceHandle,
 };
+use dashmap::DashMap;
 use reth_beacon_consensus::{
     BeaconConsensusEngineEvent, BeaconEngineMessage, ForkchoiceStateTracker, InvalidHeaderCache,
     OnForkChoiceUpdated, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -40,7 +41,10 @@ use reth_rpc_types::{
     ExecutionPayload,
 };
 use reth_stages_api::ControlFlow;
-use reth_trie::{updates::TrieUpdates, HashedPostState, TrieInput};
+use reth_trie::{
+    updates::{StorageTrieUpdates, TrieUpdates},
+    HashedPostState, TrieInput,
+};
 use reth_trie_parallel::parallel_root::ParallelStateRoot;
 use reth_trie_prefetch::TriePrefetch;
 use std::{
@@ -2163,11 +2167,11 @@ where
             return Err(e.into())
         }
 
-        let (prefetch_tx, interrupt_tx) =
+        let (prefetch_tx, interrupt_tx, missing_leaves_cache) =
             if self.enable_prefetch && !self.skip_state_root_validation {
                 self.setup_prefetch()
             } else {
-                (None, None)
+                (None, None, Default::default())
             };
 
         let executor = self
@@ -2226,7 +2230,7 @@ where
             let persistence_in_progress = self.persistence_state.in_progress();
             if !persistence_in_progress {
                 state_root_result = match self
-                    .compute_state_root_in_parallel(block.parent_hash, &hashed_state)
+                    .compute_state_root_in_parallel(block.parent_hash, &hashed_state, missing_leaves_cache)
                 {
                     Ok((state_root, trie_output)) => Some((state_root, trie_output)),
                     Err(ProviderError::ConsistentView(error)) => {
@@ -2313,6 +2317,7 @@ where
         &self,
         parent_hash: B256,
         hashed_state: &HashedPostState,
+        missing_leaves_cache: Arc<DashMap<B256, (B256, StorageTrieUpdates)>>,
     ) -> ProviderResult<(B256, TrieUpdates)> {
         let consistent_view = ConsistentDbView::new_with_latest_tip(self.provider.clone())?;
         let mut input = TrieInput::default();
@@ -2331,7 +2336,7 @@ where
         // Extend with block we are validating root for.
         input.append_ref(hashed_state);
 
-        Ok(ParallelStateRoot::new(consistent_view, input).incremental_root_with_updates()?)
+        Ok(ParallelStateRoot::new(consistent_view, input).incremental_root_with_updates_and_cache(missing_leaves_cache)?)
     }
 
     /// Handles an error that occurred while inserting a block.
@@ -2563,20 +2568,30 @@ where
         Ok(())
     }
 
-    fn setup_prefetch(&self) -> (Option<UnboundedSender<EvmState>>, Option<oneshot::Sender<()>>) {
+    fn setup_prefetch(
+        &self,
+    ) -> (
+        Option<UnboundedSender<EvmState>>,
+        Option<oneshot::Sender<()>>,
+        Arc<DashMap<B256, (B256, StorageTrieUpdates)>>,
+    ) {
         let (prefetch_tx, prefetch_rx) = tokio::sync::mpsc::unbounded_channel();
         let (interrupt_tx, interrupt_rx) = oneshot::channel();
 
         let mut trie_prefetch = TriePrefetch::new();
         let provider_factory = self.provider.clone();
+        let missing_leaves_cache = Arc::new(DashMap::new());
+        let missing_leaves_cache_clone = Arc::clone(&missing_leaves_cache);
 
         tokio::spawn({
             async move {
-                trie_prefetch.run(provider_factory, prefetch_rx, interrupt_rx).await;
+                trie_prefetch
+                    .run(provider_factory, prefetch_rx, interrupt_rx, missing_leaves_cache_clone)
+                    .await;
             }
         });
 
-        (Some(prefetch_tx), Some(interrupt_tx))
+        (Some(prefetch_tx), Some(interrupt_tx), missing_leaves_cache)
     }
 }
 
