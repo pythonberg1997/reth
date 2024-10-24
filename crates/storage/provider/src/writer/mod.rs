@@ -327,6 +327,14 @@ where
                 .prune_receipts(total_txs, block_number)?;
         }
 
+        let highest_static_file_block = self
+            .static_file()
+            .get_highest_static_file_block(StaticFileSegment::Sidecars)
+            .expect("todo: error handling, headers should exist");
+        self.static_file()
+            .get_writer(block_number, StaticFileSegment::Sidecars)?
+            .prune_sidecars(highest_static_file_block.saturating_sub(block_number))?;
+
         Ok(())
     }
 }
