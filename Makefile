@@ -333,11 +333,11 @@ bsc-docker-build-push-nightly: ## Build and push cross-arch Docker image tagged 
 define bsc_docker_build_push
 	$(MAKE) bsc-build-x86_64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/amd64
-	cp $(BUILD_PATH)/x86_64-unknown-linux-gnu/$(PROFILE)/bsc-reth $(BIN_DIR)/amd64/bsc-reth
+	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/bsc-reth $(BIN_DIR)/amd64/bsc-reth
 
 	$(MAKE) bsc-build-aarch64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/arm64
-	cp $(BUILD_PATH)/aarch64-unknown-linux-gnu/$(PROFILE)/bsc-reth $(BIN_DIR)/arm64/bsc-reth
+	cp $(CARGO_TARGET_DIR)/aarch64-unknown-linux-gnu/$(PROFILE)/bsc-reth $(BIN_DIR)/arm64/bsc-reth
 
 	docker buildx build --file ./DockerfileBsc.cross . \
 		--platform linux/amd64,linux/arm64 \
